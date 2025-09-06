@@ -3,17 +3,18 @@ import requests
 import yt_dlp
 from flask import Flask, request
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # Render → Environment Variable me set karo
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # Render env variable
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 app = Flask(__name__)
 
-# ✅ Home route
+# ✅ Home route (for testing)
 @app.route("/", methods=["GET"])
 def home():
-    return "✅ Telegram Instagram Downloader Bot is running on Render!"
+    return "✅ Telegram Bot is running on Render!"
 
-# ✅ Webhook
+
+# ✅ Webhook route
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
     update = request.get_json()
@@ -27,35 +28,29 @@ def webhook():
         chat_id = update["message"]["chat"]["id"]
         text = update["message"].get("text", "")
 
-        # /start command
         if text == "/start":
-            send_message(chat_id, "👋 Hello! Send me any *public Instagram reel/post link* and I'll download it for you.")
-        
-        # Instagram link handler
-        elif text.startswith("http") and "instagram.com" in text:
-            send_message(chat_id, "⏳ Downloading your Instagram video... Please wait.")
-
-            video_path = download_instagram_video(text)
-            if video_path:
-                send_video(chat_id, video_path)
-                os.remove(video_path)  # cleanup
-            else:
-                send_message(chat_id, "❌ Failed to download. Maybe it's private?")
-        
+            send_message(chat_id, "👋 Hello! Send me a YouTube or Instagram link.")
+        elif "youtube.com" in text or "youtu.be" in text:
+            handle_youtube(chat_id, text)
+        elif "instagram.com/reel" in text or "instagram.com/p" in text:
+            handle_instagram(chat_id, text)
         else:
-            send_message(chat_id, "⚡ Please send a valid Instagram link.")
+            send_message(chat_id, "⚠️ Please send a valid YouTube or Instagram link.")
 
     return {"ok": True}
 
-# ✅ Send message
+
+# ✅ Helper: send text message
 def send_message(chat_id, text):
     url = f"{BASE_URL}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text}
     try:
-        requests.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"})
+        requests.post(url, json=payload)
     except Exception as e:
         print("❌ Error sending message:", e)
 
-# ✅ Send video
+
+# ✅ Helper: send video
 def send_video(chat_id, video_path):
     url = f"{BASE_URL}/sendVideo"
     try:
@@ -64,19 +59,34 @@ def send_video(chat_id, video_path):
     except Exception as e:
         print("❌ Error sending video:", e)
 
-# ✅ yt-dlp Download Function
-def download_instagram_video(url):
+
+# ✅ Download YouTube video
+def handle_youtube(chat_id, url):
+    send_message(chat_id, "⏳ Downloading YouTube video...")
     try:
-        ydl_opts = {
-            "outtmpl": "downloaded.%(ext)s",
-            "format": "mp4",
-        }
+        ydl_opts = {"outtmpl": "downloads/%(id)s.%(ext)s", "format": "mp4"}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            return ydl.prepare_filename(info)
+            file_path = ydl.prepare_filename(info)
+        send_video(chat_id, file_path)
     except Exception as e:
-        print("❌ Download error:", e)
-        return None
+        send_message(chat_id, f"❌ Failed to download YouTube video.\n{e}")
+
+
+# ✅ Download Instagram reel/post
+def handle_instagram(chat_id, url):
+    send_message(chat_id, "⏳ Downloading Instagram video...")
+    try:
+        clean_url = url.split("?")[0]  # remove ?igsh=...
+        ydl_opts = {"outtmpl": "downloads/%(id)s.%(ext)s", "format": "mp4"}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(clean_url, download=True)
+            file_path = ydl.prepare_filename(info)
+        send_video(chat_id, file_path)
+    except Exception as e:
+        send_message(chat_id, f"❌ Failed to download Instagram video.\n{e}")
+
 
 if __name__ == "__main__":
+    os.makedirs("downloads", exist_ok=True)
     app.run(host="0.0.0.0", port=10000)
