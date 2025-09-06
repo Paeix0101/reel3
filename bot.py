@@ -3,7 +3,7 @@ import requests
 import yt_dlp
 from flask import Flask, request
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # Render pe env var me set karna
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # Render → Environment Variable me set karo
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 app = Flask(__name__)
@@ -11,10 +11,9 @@ app = Flask(__name__)
 # ✅ Home route
 @app.route("/", methods=["GET"])
 def home():
-    return "✅ Telegram Bot is running!"
+    return "✅ Telegram Instagram Downloader Bot is running on Render!"
 
-
-# ✅ Webhook route
+# ✅ Webhook
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
     update = request.get_json()
@@ -28,33 +27,35 @@ def webhook():
         chat_id = update["message"]["chat"]["id"]
         text = update["message"].get("text", "")
 
+        # /start command
         if text == "/start":
-            send_message(chat_id, "👋 Send me a public Instagram Reels link and I will download it for you.")
-        elif "instagram.com/reel" in text:
-            send_message(chat_id, "⏳ Downloading your reel... Please wait.")
-            video_path = download_instagram_reel(text)
+            send_message(chat_id, "👋 Hello! Send me any *public Instagram reel/post link* and I'll download it for you.")
+        
+        # Instagram link handler
+        elif text.startswith("http") and "instagram.com" in text:
+            send_message(chat_id, "⏳ Downloading your Instagram video... Please wait.")
+
+            video_path = download_instagram_video(text)
             if video_path:
                 send_video(chat_id, video_path)
-                os.remove(video_path)  # clean up after sending
+                os.remove(video_path)  # cleanup
             else:
-                send_message(chat_id, "❌ Failed to download. Make sure it's a *public* reel link.")
+                send_message(chat_id, "❌ Failed to download. Maybe it's private?")
+        
         else:
-            send_message(chat_id, "⚠️ Please send a valid Instagram Reel link.")
+            send_message(chat_id, "⚡ Please send a valid Instagram link.")
 
     return {"ok": True}
 
-
-# ✅ Helper function: send text
+# ✅ Send message
 def send_message(chat_id, text):
     url = f"{BASE_URL}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text}
     try:
-        requests.post(url, json=payload)
+        requests.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"})
     except Exception as e:
         print("❌ Error sending message:", e)
 
-
-# ✅ Helper function: send video
+# ✅ Send video
 def send_video(chat_id, video_path):
     url = f"{BASE_URL}/sendVideo"
     try:
@@ -63,23 +64,19 @@ def send_video(chat_id, video_path):
     except Exception as e:
         print("❌ Error sending video:", e)
 
-
-# ✅ Download Instagram reel using yt-dlp
-def download_instagram_reel(url):
-    output_path = "reel.mp4"
-    ydl_opts = {
-        "outtmpl": output_path,
-        "format": "mp4[height<=720]",  # max 720p
-        "quiet": True
-    }
+# ✅ yt-dlp Download Function
+def download_instagram_video(url):
     try:
+        ydl_opts = {
+            "outtmpl": "downloaded.%(ext)s",
+            "format": "mp4",
+        }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-        return output_path
+            info = ydl.extract_info(url, download=True)
+            return ydl.prepare_filename(info)
     except Exception as e:
-        print("❌ Error downloading reel:", e)
+        print("❌ Download error:", e)
         return None
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
